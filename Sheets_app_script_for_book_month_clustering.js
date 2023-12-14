@@ -1,44 +1,112 @@
 function colorRowsByMonth() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var range = sheet.getRange("I1:I"); // Column with days
-  var values = range.getValues();
+  var daysRange = sheet.getRange("I2:I" + sheet.getLastRow()); // Column with days
+  var readingStatusRange = sheet.getRange("M2:P" + sheet.getLastRow()); // Columns M and P for reading status
+  var daysValues = daysRange.getValues();
+  var readingStatusValues = readingStatusRange.getValues();
+  var estimatedTimeRange = sheet.getRange("J2:J" + sheet.getLastRow()); // Column for estimated time
   var sum = 0;
-  var startRow = 2; // Start from row 2 to skip header
   var month = 1; // Start with month 1
+  var startUpcomingMonthRow = -1;
 
-  Logger.log("Starting to process rows");
-
-  for (var i = 1; i < values.length; i++) { // Start from the second row
-    var dayValue = parseFloat(values[i][0]);
-
-    if (!isNaN(dayValue) && values[i][0] !== "") {
-      sum += dayValue;
-      Logger.log("Row: " + (i + 1) + ", Days: " + dayValue + ", Running Total: " + sum);
+  // Calculate and set estimated reading time
+  for (var i = 0; i < daysValues.length; i++) {
+    if (daysValues[i][0] !== "") {
+      var estimatedTime = parseFloat(daysValues[i][0]) / 3;
+      estimatedTimeRange.getCell(i + 1, 1).setValue(estimatedTime); // +1 because range starts from row 2
     }
+  }
 
-    // Check if sum exceeds 30 or it's the last row
-    if (sum >= 30 || i === values.length - 1) {
-      var color = generateRandomColor();
-      sheet.getRange(startRow, 10, i - startRow + 1).setBackground(color); // Coloring Column J
+  Logger.log("Assigning month numbers based on clustering");
 
-      // Set month numbers only for non-empty rows
-      for (var j = startRow; j <= i; j++) {
-        if (sheet.getRange(j, 9).getValue() !== "") {
-          sheet.getRange(j, 10).setValue(month);
-        }
+  // Assign month numbers based on clustering
+  for (var i = 1; i < daysValues.length; i++) {
+    var dayValue = parseFloat(daysValues[i][0]);
+
+    if (!isNaN(dayValue) && daysValues[i][0] !== "") {
+      sum += dayValue / 3; // Divide by 3 for the reading time per day
+
+      if (sheet.getRange(i + 1, 9).getValue() !== "") {
+        sheet.getRange(i + 1, 11).setValue(month); // Set month number in Column K
       }
 
-      Logger.log("Coloring rows " + startRow + " to " + (i + 1) + " with color " + color + " and month " + month);
+      // Find the start of the upcoming month's calculation
+      if (startUpcomingMonthRow === -1 && readingStatusValues[i][0] === false && readingStatusValues[i][3] === false) {
+        startUpcomingMonthRow = i + 1; // +1 because we start from the next row
+      }
 
-      sum = 0;
-      startRow = i + 1;
-      if (i < values.length - 1) { // Increment month only if it's not the last row
-        month++;
+      if (sum >= 30 || i === daysValues.length - 1) {
+        sum = 0;
+        if (i < daysValues.length - 1) {
+          month++;
+        }
       }
     }
   }
 
+  Logger.log("Calculating upcoming month's reads");
+
+  // Calculate upcoming month's reads
+  if (startUpcomingMonthRow !== -1) {
+    sum = 0;
+    month = 1; // Reset month for upcoming reads
+
+    for (var i = startUpcomingMonthRow; i < daysValues.length; i++) {
+      var dayValue = parseFloat(daysValues[i][0]);
+
+      if (!isNaN(dayValue) && daysValues[i][0] !== "") {
+        sum += dayValue / 3; // Divide by 3 for the reading time per day
+
+        sheet.getRange(i + 1, 12).setValue(month); // Set month number in Column L for upcoming reads
+
+        if (sum >= 30 || i === daysValues.length - 1) {
+          sum = 0;
+          month++;
+        }
+      } else {
+        // Fill skipped rows with black color
+        sheet.getRange(i + 1, 12).setBackground('black');
+      }
+    }
+  }
+
+  Logger.log("Creating color map for each unique month number");
+
+  // Create a color map for each unique month number
+  var colorMap = createColorMap(sheet, "K2:K" + sheet.getLastRow());
+
+  Logger.log("Coloring rows based on month numbers");
+
+  // Color rows based on month numbers
+  colorRowsByMonthNumber(sheet, colorMap, "K2:K" + sheet.getLastRow(), 11);
+  colorRowsByMonthNumber(sheet, colorMap, "L2:L" + sheet.getLastRow(), 12);
+
   Logger.log("Finished processing rows");
+}
+
+function createColorMap(sheet, range) {
+  var monthRange = sheet.getRange(range);
+  var monthValues = monthRange.getValues();
+  var colorMap = {};
+
+  monthValues.forEach(function (value) {
+    if (value[0] && !colorMap[value[0]]) {
+      colorMap[value[0]] = generateRandomColor(); // Assign a new color if not already present
+    }
+  });
+
+  return colorMap;
+}
+
+function colorRowsByMonthNumber(sheet, colorMap, range, column) {
+  var monthRange = sheet.getRange(range);
+  var monthValues = monthRange.getValues();
+
+  monthValues.forEach(function (value, index) {
+    if (value[0]) {
+      sheet.getRange(index + 2, column).setBackground(colorMap[value[0]]);
+    }
+  });
 }
 
 function generateRandomColor() {
